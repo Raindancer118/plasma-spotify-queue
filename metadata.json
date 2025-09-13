@@ -1,0 +1,19 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Email": "developer@example.com",
+        "Name": "Spotify Widget Developer"
+      }
+    ],
+    "Category": "Multimedia",
+    "Description": "Display your Spotify play queue - simple working version",
+    "Icon": "media-playlist-append",
+    "Id": "com.spotify.queue-working",
+    "Name": "Spotify Queue (Working)",
+    "Version": "6.0",
+    "Website": "https://github.com/user/spotify-queue-widget"
+  },
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "KPackageStructure": "Plasma/Applet"
+}
