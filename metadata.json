@@ -2,8 +2,8 @@
   "KPlugin": {
     "Authors": [
       {
-        "Email": "developer@example.com",
-        "Name": "Spotify Widget Developer"
+        "Email": "tom560stieh@gmail.com",
+        "Name": "Raindancer118"
       }
     ],
     "Category": "Multimedia",
@@ -12,7 +12,7 @@
     "Id": "com.spotify.queue-working",
     "Name": "Spotify Queue (Working)",
     "Version": "6.0",
-    "Website": "https://github.com/user/spotify-queue-widget"
+    "Website": "https://github.com/Raindancer118/spotify-queue-widget"
   },
   "X-Plasma-API-Minimum-Version": "6.0",
   "KPackageStructure": "Plasma/Applet"
