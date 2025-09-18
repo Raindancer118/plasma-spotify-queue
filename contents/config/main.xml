@@ -4,7 +4,7 @@
       xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
       http://www.kde.org/standards/kcfg/1.0/kcfg.xsd" >
   <kcfgfile name=""/>
-
+  
   <group name="General">
     <entry name="clientId" type="String">
       <default></default>
@@ -16,6 +16,15 @@
       <default></default>
     </entry>
     <entry name="refreshToken" type="String">
+      <default></default>
+    </entry>
+    <entry name="tokenExpiryTime" type="String">
+      <default></default>
+    </entry>
+    <entry name="lastSuccessfulRefresh" type="String">
+      <default></default>
+    </entry>
+    <entry name="lastAuthState" type="String">
       <default></default>
     </entry>
   </group>

@@ -12,7 +12,7 @@ KCM.SimpleKCM {
         anchors.fill: parent
 
         Kirigami.Separator {
-            Kirigami.FormData.label: "Simple OAuth Setup"
+            Kirigami.FormData.label: "Enhanced Auto-Authentication Setup"
             Kirigami.FormData.isSection: true
         }
 
@@ -30,30 +30,43 @@ KCM.SimpleKCM {
         }
 
         Kirigami.Separator {
-            Kirigami.FormData.label: "Setup Instructions"
+            Kirigami.FormData.label: "Enhanced Features"
             Kirigami.FormData.isSection: true
         }
 
         Label {
-            Kirigami.FormData.label: "Simple Setup:"
+            Kirigami.FormData.label: "New Auto-Features:"
+            text: "🔗 Automatic code extraction from URLs\n" +
+                  "🔄 Proactive token refresh (extends sessions)\n" +
+                  "💾 Enhanced session persistence\n" +
+                  "⚡ Reduced re-authentication needs\n" +
+                  "🛡️ State parameter verification for security"
+            wrapMode: Text.Wrap
+            Layout.maximumWidth: 500
+            color: Kirigami.Theme.positiveTextColor
+        }
+
+        Label {
+            Kirigami.FormData.label: "Setup (Same as Before):"
             text: "1. Go to Spotify Developer Dashboard\n" +
                   "2. Create a new app\n" +
                   "3. Set redirect URI to: https://example.com/callback\n" +
                   "4. Copy Client ID and Client Secret here\n" +
-                  "5. Use 'Get Code' button in widget"
+                  "5. Use enhanced 'Get Code' button in widget"
             wrapMode: Text.Wrap
             Layout.maximumWidth: 500
         }
 
         Label {
-            Kirigami.FormData.label: "Why this works:"
-            text: "• Uses standard Authorization Code flow\n" +
-                  "• No PKCE complications (S256 issues avoided)\n" +
-                  "• Clear redirect to example.com shows code easily\n" +
-                  "• Reliable and battle-tested approach"
+            Kirigami.FormData.label: "How Auto-Extraction Works:"
+            text: "After clicking 'Get Code' and authorizing:\n" +
+                  "• Simply paste the ENTIRE redirect URL into the widget\n" +
+                  "• Widget automatically extracts the authorization code\n" +
+                  "• Or paste just the code manually as before\n" +
+                  "• Sessions last much longer with proactive refresh"
             wrapMode: Text.Wrap
             Layout.maximumWidth: 500
-            color: Kirigami.Theme.positiveTextColor
+            color: Kirigami.Theme.neutralTextColor
         }
 
         Button {

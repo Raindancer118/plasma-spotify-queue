@@ -7,12 +7,12 @@
       }
     ],
     "Category": "Multimedia",
-    "Description": "Display your Spotify play queue - simple working version",
+    "Description": "Spotify queue with enhanced auto-authentication and extended session persistence",
     "Icon": "media-playlist-append",
     "Id": "com.spotify.queue-working",
-    "Name": "Spotify Queue (Working)",
-    "Version": "6.0",
-    "Website": "https://github.com/Raindancer118/spotify-queue-widget"
+    "Name": "Spotify Queue (Enhanced)",
+    "Version": "6.1",
+    "Website": "https://github.com/Raindancer118/plasma-spotify-queue"
   },
   "X-Plasma-API-Minimum-Version": "6.0",
   "KPackageStructure": "Plasma/Applet"

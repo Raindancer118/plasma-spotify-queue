@@ -20,6 +20,11 @@ PlasmoidItem {
     property string accessToken: plasmoid.configuration.accessToken || ""
     property string refreshToken: plasmoid.configuration.refreshToken || ""
 
+    // NEW: Enhanced session tracking
+    property string lastAuthState: plasmoid.configuration.lastAuthState || ""
+    property int tokenExpiryTime: parseInt(plasmoid.configuration.tokenExpiryTime || "0")
+    property int lastSuccessfulRefresh: parseInt(plasmoid.configuration.lastSuccessfulRefresh || "0")
+
     // API endpoints
     property string authBaseUrl: "https://accounts.spotify.com/authorize"
     property string tokenUrl: "https://accounts.spotify.com/api/token"
@@ -31,17 +36,23 @@ PlasmoidItem {
     property var queueData: []
     property bool isAuthenticated: false
     property bool isLoading: false
-    property int tokenExpiryTime: 0
+    property string currentAuthState: ""
+
+    // NEW: Enhanced token refresh properties
+    property int tokenRefreshTime: 0
 
     // Generate the authorization URL (standard OAuth without PKCE)
     function getAuthUrl() {
-        var state = generateRandomString(16);
+        // NEW: Generate and store current auth state for security
+        currentAuthState = generateRandomString(16);
+        plasmoid.configuration.lastAuthState = currentAuthState;
+        
         var params = [
             "response_type=code",
             "client_id=" + encodeURIComponent(clientId),
             "scope=" + encodeURIComponent(scopes),
             "redirect_uri=" + encodeURIComponent(redirectUri),
-            "state=" + encodeURIComponent(state),
+            "state=" + encodeURIComponent(currentAuthState),
             "show_dialog=true"
         ].join("&");
 
@@ -57,6 +68,31 @@ PlasmoidItem {
         return result;
     }
 
+    // NEW: Function to extract code from full redirect URL
+    function extractCodeFromUrl(url) {
+        try {
+            var codeMatch = url.match(/[?&]code=([^&]*)/);
+            var stateMatch = url.match(/[?&]state=([^&]*)/);
+            
+            if (codeMatch && stateMatch) {
+                var extractedCode = decodeURIComponent(codeMatch[1]);
+                var extractedState = decodeURIComponent(stateMatch[1]);
+                
+                // Verify state matches for security (if we have current state)
+                if (currentAuthState && extractedState !== currentAuthState) {
+                    console.log("State mismatch in URL - possible security issue");
+                    showError("Security error: Invalid state parameter");
+                    return null;
+                }
+                
+                return extractedCode;
+            }
+        } catch (e) {
+            console.log("Error extracting code from URL:", e.message);
+        }
+        return null;
+    }
+
     function openAuthUrl() {
         if (!clientId || !clientSecret) {
             showError("Please configure your Client ID and Client Secret in widget settings");
@@ -65,7 +101,7 @@ PlasmoidItem {
 
         var authUrl = getAuthUrl();
         Qt.openUrlExternally(authUrl);
-        showMessage("🌐 Browser opened. After authorization, copy the 'code' from the redirect URL");
+        showMessage("🌐 Browser opened. Paste the full redirect URL or just the code below.");
         authArea.visible = true;
     }
 
@@ -94,23 +130,29 @@ PlasmoidItem {
                         refreshToken = response.refresh_token || "";
 
                         if (accessToken) {
-                            // Calculate expiry time
+                            // Enhanced token persistence
                             var currentTime = Math.floor(Date.now() / 1000);
                             tokenExpiryTime = currentTime + (response.expires_in || 3600);
+                            tokenRefreshTime = currentTime + Math.max(300, (response.expires_in || 3600) - 300); // Refresh 5 min early
+                            lastSuccessfulRefresh = currentTime;
 
-                            // Save tokens
+                            // Save tokens with enhanced metadata
                             plasmoid.configuration.accessToken = accessToken;
                             if (refreshToken) {
                                 plasmoid.configuration.refreshToken = refreshToken;
                             }
+                            plasmoid.configuration.tokenExpiryTime = tokenExpiryTime.toString();
+                            plasmoid.configuration.lastSuccessfulRefresh = lastSuccessfulRefresh.toString();
 
                             isAuthenticated = true;
                             authArea.visible = false;
                             authCodeField.text = "";
 
-                            showMessage("✅ Authentication successful!");
+                            showMessage("✅ Authentication successful! Session will persist longer.");
                             fetchQueue();
                             refreshTimer.start();
+                            // NEW: Start proactive refresh timer
+                            proactiveRefreshTimer.start();
                         } else {
                             showError("No access token received");
                         }
@@ -146,6 +188,7 @@ PlasmoidItem {
         xhr.send(params);
     }
 
+    // Enhanced refresh token handling
     function refreshAccessToken() {
         if (!refreshToken) {
             showMessage("No refresh token available. Please re-authenticate.");
@@ -154,6 +197,7 @@ PlasmoidItem {
         }
 
         isLoading = true;
+        showMessage("🔄 Refreshing access token...");
 
         var xhr = new XMLHttpRequest();
         xhr.onreadystatechange = function() {
@@ -164,12 +208,22 @@ PlasmoidItem {
                         var response = JSON.parse(xhr.responseText);
                         accessToken = response.access_token || accessToken;
 
-                        // Update expiry time
+                        // Update refresh token if provided (some providers rotate refresh tokens)
+                        if (response.refresh_token) {
+                            refreshToken = response.refresh_token;
+                            plasmoid.configuration.refreshToken = refreshToken;
+                        }
+
+                        // Enhanced token tracking
                         var currentTime = Math.floor(Date.now() / 1000);
                         tokenExpiryTime = currentTime + (response.expires_in || 3600);
+                        tokenRefreshTime = currentTime + Math.max(300, (response.expires_in || 3600) - 300);
+                        lastSuccessfulRefresh = currentTime;
 
-                        // Save new token
+                        // Save enhanced metadata
                         plasmoid.configuration.accessToken = accessToken;
+                        plasmoid.configuration.tokenExpiryTime = tokenExpiryTime.toString();
+                        plasmoid.configuration.lastSuccessfulRefresh = lastSuccessfulRefresh.toString();
 
                         isAuthenticated = true;
                         showMessage("🔄 Token refreshed successfully");
@@ -178,8 +232,11 @@ PlasmoidItem {
                         showError("Failed to refresh token: " + e.message);
                         disconnect();
                     }
+                } else if (xhr.status === 400) {
+                    showError("Refresh token expired. Please re-authenticate.");
+                    disconnect();
                 } else {
-                    showError("Token refresh failed. Please re-authenticate.");
+                    showError("Token refresh failed: " + xhr.status + ". Please re-authenticate.");
                     disconnect();
                 }
             }
@@ -201,6 +258,13 @@ PlasmoidItem {
         if (tokenExpiryTime === 0) return false;
         var currentTime = Math.floor(Date.now() / 1000);
         return currentTime >= tokenExpiryTime;
+    }
+
+    // NEW: Check if we should proactively refresh token
+    function shouldProactivelyRefresh() {
+        if (tokenRefreshTime === 0) return false;
+        var currentTime = Math.floor(Date.now() / 1000);
+        return currentTime >= tokenRefreshTime;
     }
 
     function fetchQueue() {
@@ -303,16 +367,24 @@ PlasmoidItem {
     function disconnect() {
         // Stop refresh timer
         refreshTimer.stop();
+        // NEW: Stop proactive refresh timer
+        proactiveRefreshTimer.stop();
 
         // Clear state
         isAuthenticated = false;
         accessToken = "";
         refreshToken = "";
         tokenExpiryTime = 0;
+        tokenRefreshTime = 0;
+        lastSuccessfulRefresh = 0;
+        currentAuthState = "";
 
         // Clear stored configuration
         plasmoid.configuration.accessToken = "";
         plasmoid.configuration.refreshToken = "";
+        plasmoid.configuration.tokenExpiryTime = "";
+        plasmoid.configuration.lastSuccessfulRefresh = "";
+        plasmoid.configuration.lastAuthState = "";
 
         // Clear UI
         queueListModel.clear();
@@ -323,29 +395,34 @@ PlasmoidItem {
         showMessage("🔴 Disconnected from Spotify");
     }
 
-    // Initialize on component load
+    // Enhanced initialization with better token recovery
     Component.onCompleted: {
+        // Try to restore enhanced token metadata
+        lastAuthState = plasmoid.configuration.lastAuthState || "";
+
         if (accessToken && !isTokenExpired()) {
             isAuthenticated = true;
             fetchQueue();
             refreshTimer.start();
-            showMessage("🟢 Session restored");
+            proactiveRefreshTimer.start();
+            showMessage("🟢 Session restored successfully");
         } else if (accessToken && isTokenExpired()) {
             showMessage("⏰ Previous session expired");
             if (refreshToken) {
+                showMessage("🔄 Attempting to restore session with refresh token...");
                 refreshAccessToken();
             } else {
                 showMessage("Ready to connect. Click 'Get Code' to start.");
             }
         } else {
-            showMessage("👋 Ready to connect to Spotify");
+            showMessage("👋 Ready to connect with enhanced authentication");
         }
     }
 
-    // Auto-refresh timer
+    // Auto-refresh timer (10 seconds)
     Timer {
         id: refreshTimer
-        interval: 10000 // 30 seconds
+        interval: 10000
         repeat: true
         running: false
         onTriggered: {
@@ -353,6 +430,20 @@ PlasmoidItem {
                 fetchQueue();
             } else {
                 disconnect();
+            }
+        }
+    }
+
+    // NEW: Proactive token refresh timer (checks every 5 minutes)
+    Timer {
+        id: proactiveRefreshTimer
+        interval: 300000 // 5 minutes
+        repeat: true
+        running: false
+        onTriggered: {
+            if (isAuthenticated && shouldProactivelyRefresh() && refreshToken) {
+                console.log("Proactively refreshing token to maintain session");
+                refreshAccessToken();
             }
         }
     }
@@ -388,7 +479,7 @@ PlasmoidItem {
                 }
 
                 PlasmaComponents3.Label {
-                    text: isAuthenticated ? "🟢 Connected" : "🔴 Not connected"
+                    text: isAuthenticated ? "🟢 Connected (Enhanced)" : "🔴 Not connected"
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     opacity: 0.8
                 }
@@ -418,16 +509,16 @@ PlasmoidItem {
         PlasmaComponents3.Label {
             id: statusText
             Layout.fillWidth: true
-            text: "Ready to connect"
+            text: "Ready to connect with enhanced authentication"
             wrapMode: Text.Wrap
             font.pointSize: Kirigami.Theme.smallFont.pointSize
         }
 
-        // Authorization Code Input Area
+        // Enhanced Authorization Code Input Area
         Rectangle {
             id: authArea
             Layout.fillWidth: true
-            Layout.preferredHeight: 160
+            Layout.preferredHeight: 180
             visible: false
             color: Kirigami.Theme.backgroundColor
             border.color: Kirigami.Theme.highlightColor
@@ -440,14 +531,23 @@ PlasmoidItem {
                 spacing: Kirigami.Units.smallSpacing
 
                 PlasmaExtras.Heading {
-                    text: "🔑 Enter Authorization Code"
+                    text: "🔑 Enhanced Authorization"
                     level: 4
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                 }
 
                 PlasmaComponents3.Label {
-                    text: "After authorizing in browser:\n1. Copy the entire redirect URL\n2. Find '&code=' or '?code=' parameter\n3. Copy everything between 'code=' and the next '&'"
+                    text: "✨ Smart Input: Paste either the full redirect URL or just the code!"
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    color: Kirigami.Theme.positiveTextColor
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                PlasmaComponents3.Label {
+                    text: "After authorizing in browser:\n• Copy the ENTIRE redirect URL and paste below (auto-extracts code)\n• OR copy just the authorization code manually"
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -455,7 +555,7 @@ PlasmoidItem {
                 }
 
                 PlasmaComponents3.Label {
-                    text: "Example: ...&code=AQBXXXxxxxXXXxxx&state=... → copy AQBXXXxxxxXXXxxx"
+                    text: "Example URL: https://example.com/callback?code=AQBxxxxx...&state=xxxxx"
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -469,8 +569,22 @@ PlasmoidItem {
                     PlasmaComponents3.TextField {
                         id: authCodeField
                         Layout.fillWidth: true
-                        placeholderText: "Paste the authorization code here..."
+                        placeholderText: "Paste full URL or authorization code here..."
                         selectByMouse: true
+
+                        // NEW: Auto-detect and extract code when text changes
+                        onTextChanged: {
+                            if (text.length > 10) {
+                                // Check if it's a full URL
+                                if (text.includes("example.com/callback") && text.includes("code=")) {
+                                    var extractedCode = extractCodeFromUrl(text);
+                                    if (extractedCode) {
+                                        text = extractedCode;
+                                        showMessage("✅ Code extracted from URL automatically!");
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     PlasmaComponents3.Button {
@@ -488,7 +602,7 @@ PlasmoidItem {
             visible: isLoading
         }
 
-        // Queue List
+        // Queue List (unchanged - works perfectly)
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -585,16 +699,25 @@ PlasmoidItem {
 
                     iconName: "network-disconnect"
                     text: "Connect to Spotify"
-                    explanation: "Click 'Get Code' to start authorization"
+                    explanation: "Enhanced authentication with auto-extraction"
                 }
             }
         }
 
-        // Footer
+        // Enhanced Footer with session info
         PlasmaComponents3.Label {
             Layout.fillWidth: true
-            text: queueListModel.count > 0 ?
-                  "📋 " + queueListModel.count + " tracks in queue" : ""
+            text: {
+                if (queueListModel.count > 0) {
+                    return "📋 " + queueListModel.count + " tracks • 🔄 Enhanced session";
+                } else if (isAuthenticated) {
+                    var timeSinceRefresh = Math.floor((Date.now() / 1000) - lastSuccessfulRefresh);
+                    var timeString = timeSinceRefresh < 60 ? "just now" : Math.floor(timeSinceRefresh / 60) + "m ago";
+                    return "🔄 Session active (last refresh: " + timeString + ")";
+                } else {
+                    return "";
+                }
+            }
             horizontalAlignment: Text.AlignHCenter
             font.pointSize: Kirigami.Theme.smallFont.pointSize
             opacity: 0.6
